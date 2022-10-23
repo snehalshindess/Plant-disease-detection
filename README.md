@@ -1,2 +1,2 @@
 # Plant-disease-detection
-image processing 
+image processing for plant disease detection in matlab

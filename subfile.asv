@@ -1,0 +1,219 @@
+close all;
+clear all;
+clc
+load net
+%pick an image
+[filename, pathname] = uigetfile({'*.*';'*.bmp';'*.jpg';'*.gif'}, 'Pick a Leaf Image File');
+I = imread([pathname,filename]);
+I = imresize(I,[256,256]);
+
+if isequal(filename,0) || isequal(pathname,0)
+       warndlg('User pressed cancel')
+else
+       g = imread(strcat( pathname,filename));
+       g = imresize(g,[256 256]);
+       %figure,imshow(g);
+       subplot(2,2,1); imshow(g); title("Original Image")
+       label = classify(net,g);
+       %disp(label);
+end
+
+% Conversion to grayscale
+I_RGB = rgb2gray(I);
+%figure, imshow(I_RGB);title('Grayscale');
+
+%Histogram Equalization
+j=histeq(I_RGB);
+imhist(j);
+
+%figure(2),imhist(I);title('Histogram'); % display the Histogram
+n=imhist(I); % Compute the histogram
+N=sum(n); % sum the values of all the histogram values
+max=0; %initialize maximum to zero
+
+for i=1:256
+    P(i)=n(i)/N; %Computing the probability of each intensity level
+end
+
+for T=2:255      % step through all thresholds from 2 to 255
+    w0=sum(P(1:T)); % Probability of class 1 (separated by threshold)
+    w1=sum(P(T+1:256)); %probability of class2 (separated by threshold)
+    u0=dot([0:T-1],P(1:T))/w0; % class mean u0
+    u1=dot([T:255],P(T+1:256))/w1; % class mean u1
+    sigma=w0*w1*((u1-u0)^2); % compute sigma i.e variance(between class)
+    if sigma>max % compare sigma with maximum 
+        max=sigma; % update the value of max i.e max=sigma
+        threshold=T-1; % desired threshold corresponds to maximum variance of between class
+    end
+end
+
+bw=im2bw(I,threshold/255); % Convert to Binary Image
+%figure(3),imshow(bw);title('Black and white image'); % Display the Binary Image /black and white image
+
+% Conversion to HSI
+I_HIS = rgb2hsi(I);
+%figure, imshow(I);title('HSI');
+
+% Enhance Contrast
+I_con = imadjust(I,stretchlim(I));
+%figure,
+%subplot(2, 3, 5);imshow(I);title('Contrast Enhanced');
+
+%%
+numColors = 3;
+L = imsegkmeans(I,numColors);
+B = labeloverlay(I,L);
+%imshow(B)
+subplot(3, 3, 2);imshow(B);title("Labeled Image RGB")
+
+lab_he = rgb2lab(I);
+ab = lab_he(:,:,2:3);
+ab = im2single(ab);
+pixel_labels = imsegkmeans(ab,numColors,NumAttempts=3);
+B2 = labeloverlay(I,pixel_labels);
+%imshow(B2)
+subplot(3, 3, 3);imshow(B2);title("Labeled Image a*b*")
+
+mask1 = pixel_labels == 1;
+cluster1 = I.*uint8(mask1);
+%imshow(cluster1)
+subplot(3, 3, 4);imshow(cluster1);title("Objects in Cluster 1");
+
+mask2 = pixel_labels == 2;
+cluster2 = I.*uint8(mask2);
+%imshow(cluster2)
+subplot(3, 3, 5);imshow(cluster2);title("Objects in Cluster 2");
+
+mask3 = pixel_labels == 3;
+cluster3 = I.*uint8(mask3);
+%imshow(cluster3)
+subplot(3, 3, 6);imshow(cluster3);title("Objects in Cluster 3");
+
+L = lab_he(:,:,1);
+L_blue = L.*double(mask3);
+L_blue = rescale(L_blue);
+idx_light_blue = imbinarize(nonzeros(L_blue));
+blue_idx = find(mask3);
+mask_dark_blue = mask3;
+mask_dark_blue(blue_idx(idx_light_blue)) = 0;
+blue_nuclei = I.*uint8(mask_dark_blue);
+%imshow(blue_nuclei)
+figure,
+imshow(blue_nuclei);title("Blue Nuclei")
+
+%%   
+% Convert image to grayscale
+img_gray = rgb2gray(I);
+
+% Define parameters for GLCM calculation
+offsets = [0 1; -1 1; -1 0; -1 -1];
+num_gray_levels = 256;
+symmetric = true;
+
+% Calculate GLCM matrix
+glcm = graycomatrix(img_gray, 'Offset', offsets, 'NumLevels', num_gray_levels, 'Symmetric', symmetric);
+
+% Calculate statistics from GLCM matrix
+stats = graycoprops(glcm);
+
+% Display results
+disp('Contrast:');
+disp(stats.Contrast);
+disp('Correlation:');
+disp(stats.Correlation);
+disp('Energy:');
+disp(stats.Energy);
+disp('Homogeneity:');
+disp(stats.Homogeneity);
+
+
+%%
+c = rgb2hsv(I);
+%figure, imshow(a)
+%figure, imshow(c)
+
+H = c(:,:,1);
+S = c(:,:,2);
+V = c(:,:,3);
+
+f = fspecial('gaussian', [9,9]);
+filter = imfilter(H, f);
+subplot(2,2,2); imshow(filter); title("Filter Image")
+
+if label == 'Bacteria'
+    bw = filter > 0.17 & filter <0.65;
+    Bw = ~bw;
+    BW2 = bwareafilt(Bw,[5 1000]);
+    figure, imshow(Bw)
+    disp(['SOLUTION -' ...
+        'Antibiotics: streptomycin and/or oxytetracycline may also help kill or suppress plant pathogenic bacteria prior to infection and reduce spread of the disease, but they will not cure plants that are already diseased.' ...
+        ' Antibiotics are also used to treat diseases caused by fastidious vascular bacteria.'])
+    %subplot(2,2,3); imshow(Bw); title("Binarized Image")
+    %subplot(2,2,4); imshow(BW2); title("Image with Spots")
+elseif label == 'Fungi' 
+    bw = filter > 0.15 & filter <0.5;
+    Bw = ~bw;
+    BW2 = bwareafilt(Bw,[5 1000]);
+    figure, imshow(Bw)
+    disp(['SOLUTION - ' ...
+        'Apply sulfur sprays with copper base fungicides in a week after first disease sign to stop its spread from sprouts. ' ...
+        'Safely manage utmost fungal as well as bacterial disease. The best way to control white rust is to practice crop rotation.' ...
+        ' Concerning treatment try appropriate fungicide to destroy the microbes']);
+    %subplot(2,2,3); imshow(Bw); title("Binarized Image")
+    %subplot(2,2,4); imshow(BW2); title("Image with Spots")
+elseif label == 'Nematodes' 
+    bw = filter > 0.08 & filter <0.5;
+    Bw = ~bw;
+    BW2 = bwareafilt(Bw,[5 600]);
+    figure, imshow(Bw)
+    disp(['Rotate crops to control certain nematodes. Rotation is useful for types that have a narrow host range, such as sugar beets attacked by the sugar beet cyst nematode. ' ...
+        'Where the crop value is too low to justify large-scale soil fumigation, crop rotation is the only practical method of nematode control.']);
+    %subplot(2,2,3); imshow(Bw); title("Binarized Image")
+    %subplot(2,2,4); imshow(BW2); title("Image with Spots")
+elseif label == 'Virus' 
+    bw = filter > 0.08 & filter <0.3;
+    Bw = ~bw;
+    BW2 = bwareafilt(Bw,[5 2000]);
+    figure, imshow(Bw)
+    disp(['Some viruses are permanently inactivated by prolonged exposure of infected tissue to relatively high temperatures—for example, 20 to 30 days at 38 degrees C (100 degrees F). ' ...
+        'This procedure, called heat therapy, frees individual plants or cuttings of the virus. The clean tissue is then used as a propagative source, allowing large-scale production of virus-free plants. ' ...
+        'This has been done with many cultivars of fruit and ornamental species. If insect vectors and infected plant material are kept out of the new virus-clean plantings, subsequent reinfection is unlikely, particularly if the planting is at a distance from virus-infected plantings. ' ...
+        'For orchard, ornamental nursery, and floricultural crops, the best management approach is the planting of stock that has been propagated from known virus-clean or certified sources. ']);
+    %subplot(2,2,3); imshow(Bw); title("Binarized Image")
+    %subplot(2,2,4); imshow(BW2); title("Image with Spots")
+elseif label == 'Normal' 
+    bw = filter > 0.1 & filter <0.5;
+    Bw = ~bw;
+    BW2 = bwareafilt(Bw,[5 2000]);
+    figure, imshow(Bw)
+    %subplot(2,2,3); imshow(Bw); title("Binarized Image")
+    %subplot(2,2,4); imshow(BW2); title("Image with Spots")
+    
+end
+
+cc = bwconncomp(BW2);
+Spots = cc.NumObjects ;
+%disp(Spots)
+
+fisObject = readfis("FuzzyLeaf.fis");
+fis = getFISCodeGenerationData(fisObject);
+
+opt = evalfisOptions('NumSamplePoints',51);
+evalfisOutput = evalfis(fis, Spots, opt);
+%plotfis(fisObject)
+
+x = ['The disease is caused by', label];
+y = ['The leaf is ', num2str(evalfisOutput), '% Healthy'];
+disp(x)
+disp(y)
+
+
+figure,
+subplot(2, 3, 1);imshow(I);title('Original image');
+subplot(2, 3, 2);imhist(I);title('Histogram');
+subplot(2, 3, 3);imshow(bw);title('Black and white image');
+subplot(2, 3, 4);imshow(I_HIS);title('HSI');
+subplot(2, 3, 5);imshow(I_con);title('Contrast Enhanced');
+subplot(2, 3, 6);imshow(I_RGB);title('Grayscale');
+
+
